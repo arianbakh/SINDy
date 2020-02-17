@@ -1,31 +1,32 @@
 import numpy as np
 import random
-import sys
 
 
-# TODO lambda needs to be calculated
+# TODO accuracy vs. complexity curve
 # TODO save final differential equation (latex) and graph structure to pdf
 # TODO one regression to rule them all
 
 
-NUMBER_OF_NODES = 2  # TODO
+NUMBER_OF_NODES = 3  # TODO
 DELTA_T = 0.01
-TIME_FRAMES = 100
 SINDY_ITERATIONS = 10
-LAMBDA = 0.1
 POWERS = np.arange(0.5, 2.5, 0.5).tolist()
 
 
-def _get_x():
-    x = np.zeros((TIME_FRAMES + 1, NUMBER_OF_NODES))
+def _get_adjacency_matrix():
     a = np.zeros((NUMBER_OF_NODES, NUMBER_OF_NODES))
     for i in range(NUMBER_OF_NODES):
         for j in range(NUMBER_OF_NODES):
             if i != j:
                 # a[i, j] = random.random()
                 a[i, j] = 1
+    return a
+
+
+def _get_x(a, time_frames):
+    x = np.zeros((time_frames + 1, NUMBER_OF_NODES))
     x[0] = np.array([random.random() for i in range(NUMBER_OF_NODES)])
-    for i in range(1, TIME_FRAMES + 1):
+    for i in range(1, time_frames + 1):
         for j in range(NUMBER_OF_NODES):
             f_result = -1 * (x[i - 1, j] ** 1.5)
             g_result = 0
@@ -44,7 +45,8 @@ def _get_x_dot(x):
 
 def _get_theta(x):
     theta = []
-    for i in range(TIME_FRAMES):
+    time_frames = x.shape[0] - 1
+    for i in range(time_frames):
         entry = [1]
         for j in range(NUMBER_OF_NODES):
             for power in POWERS:
@@ -58,32 +60,37 @@ def _get_theta(x):
     return np.array(theta)
 
 
-def _sindy(x_dot, theta):
+def _sindy(x_dot, theta, candidate_lambda):
     xi = np.zeros((NUMBER_OF_NODES, theta.shape[1]))
-    total_residuals = 0
     for i in range(NUMBER_OF_NODES):
         ith_derivative = x_dot[:, i]
         ith_xi = np.linalg.lstsq(theta, ith_derivative, rcond=None)[0]
-        residuals = 0
         for j in range(SINDY_ITERATIONS):
-            small_indices = np.flatnonzero(np.absolute(ith_xi) < LAMBDA)
-            big_indices = np.flatnonzero(np.absolute(ith_xi) >= LAMBDA)
+            small_indices = np.flatnonzero(np.absolute(ith_xi) < candidate_lambda)
+            big_indices = np.flatnonzero(np.absolute(ith_xi) >= candidate_lambda)
             ith_xi[small_indices] = 0
-            least_squares = np.linalg.lstsq(theta[:, big_indices], ith_derivative, rcond=None)
-            ith_xi[big_indices] = least_squares[0]
-            residuals = sum(least_squares[3])
-        total_residuals += residuals
+            ith_xi[big_indices] = np.linalg.lstsq(theta[:, big_indices], ith_derivative, rcond=None)[0]
         xi[i] = ith_xi
-    print(total_residuals)
     return xi
 
 
 def run():
-    x = _get_x()
+    a = _get_adjacency_matrix()
+    x = _get_x(a, 100)
+    x_cv = _get_x(a, 50)
     x_dot = _get_x_dot(x)
+    x_dot_cv = _get_x_dot(x_cv)
     theta = _get_theta(x)
-    xi = _sindy(x_dot, theta)
-    print(xi)
+    theta_cv = _get_theta(x_cv)
+    for i in range(-12, 4, 1):
+        candidate_lambda = 2 ** i
+        xi = _sindy(x_dot, theta, candidate_lambda)
+        mse = np.square(x_dot_cv - (np.matmul(theta_cv, xi.T))).mean()
+        # TODO
+        print('###')
+        print(candidate_lambda)
+        print(mse)
+        # print(xi)
 
 
 if __name__ == '__main__':
