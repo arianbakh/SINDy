@@ -1,13 +1,17 @@
+import math
+import matplotlib.pyplot as plt
 import numpy as np
+import os
 import random
 
 
-# TODO accuracy vs. complexity curve
-# TODO save final differential equation (latex) and graph structure to pdf
+# TODO save final differential equation (latex) and graph structure to file
 # TODO one regression to rule them all
 
 
-NUMBER_OF_NODES = 3  # TODO
+BASE_DIR = os.path.dirname(os.path.realpath(__file__))
+OUTPUT_DIR = os.path.join(BASE_DIR, 'output')
+NUMBER_OF_NODES = 10
 DELTA_T = 0.01
 SINDY_ITERATIONS = 10
 POWERS = np.arange(0.5, 2.5, 0.5).tolist()
@@ -82,15 +86,19 @@ def run():
     x_dot_cv = _get_x_dot(x_cv)
     theta = _get_theta(x)
     theta_cv = _get_theta(x_cv)
+    mse_list = []
+    complexity_list = []
     for i in range(-12, 4, 1):
         candidate_lambda = 2 ** i
         xi = _sindy(x_dot, theta, candidate_lambda)
-        mse = np.square(x_dot_cv - (np.matmul(theta_cv, xi.T))).mean()
-        # TODO
-        print('###')
-        print(candidate_lambda)
-        print(mse)
-        # print(xi)
+        complexity = np.count_nonzero(xi) / np.prod(xi.shape)
+        mse_cv = np.square(x_dot_cv - (np.matmul(theta_cv, xi.T))).mean()
+        mse_list.append(math.log10(mse_cv))
+        complexity_list.append(complexity)
+    plt.plot(complexity_list, mse_list)
+    plt.xlabel('complexity (percentage of nonzero entries)')
+    plt.ylabel('log10 of cross validation mean squared error')
+    plt.savefig(os.path.join(OUTPUT_DIR, 'mse_complexity.png'))
 
 
 if __name__ == '__main__':
