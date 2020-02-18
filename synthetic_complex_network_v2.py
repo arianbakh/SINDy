@@ -5,7 +5,7 @@ import os
 import random
 import sys
 
-from pylatex import Document, Package
+from pylatex import Document, Package, Command
 from pylatex.utils import NoEscape
 
 
@@ -136,16 +136,16 @@ def run():
         plt.ylabel('log10 of cross validation mean squared error')
         plt.savefig(os.path.join(OUTPUT_DIR, 'node_%d_mse_complexity.png' % node_index))
 
-        latex_document.append(NoEscape(r'\begin{dmath}'))
+        latex_document.append(NoEscape(r'\clearpage $'))
         line = r'\frac{dx_{%d}}{dt}=' % node_index
         line_content = []
         for j in range(best_xi.shape[0]):
             if best_xi[j]:
                 line_content.append(r'%f' % best_xi[j] + latex_functions[j])
 
-        line += '+'.join(line_content)
+        line += ' + '.join(line_content)
         latex_document.append(NoEscape(line))
-        latex_document.append(NoEscape(r'\end{dmath}'))
+        latex_document.append(NoEscape(r'$'))
     latex_document.generate_pdf(os.path.join(OUTPUT_DIR, 'equations.pdf'))
 
 
