@@ -39,7 +39,7 @@ def _get_adjacency_matrix():
 
 def _get_x(a, time_frames):
     x = np.zeros((time_frames + 1, NUMBER_OF_NODES))
-    x[0] = np.array([random.random() * 1000 for i in range(NUMBER_OF_NODES)])  # NOTE: values must be large enough
+    x[0] = np.array([100 * i for i in range(1, NUMBER_OF_NODES + 1)])  # NOTE: values must be large enough and different
     for i in range(1, time_frames + 1):
         for j in range(NUMBER_OF_NODES):
             f_result = -1 * (x[i - 1, j] ** 1.5)
@@ -131,7 +131,7 @@ def run():
                     best_xi = xi
 
         plt.clf()
-        plt.plot(complexity_list, mse_list)
+        plt.scatter(complexity_list, mse_list)
         plt.xlabel('complexity (percentage of nonzero entries)')
         plt.ylabel('log10 of cross validation mean squared error')
         plt.savefig(os.path.join(OUTPUT_DIR, 'node_%d_mse_complexity.png' % node_index))
