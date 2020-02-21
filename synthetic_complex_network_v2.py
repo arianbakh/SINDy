@@ -4,13 +4,24 @@ import numpy as np
 import os
 import random
 import sys
+import warnings
 
-from pylatex import Document, Package, Command
+from matplotlib.backends import backend_gtk3
+from pylatex import Document, Package
 from pylatex.utils import NoEscape
 
 
-# TODO one regression to rule them all
+# TODO one regression to rule them all -> concat
+# TODO print lambdas
+# TODO gradually decrease lambdas
+# TODO test random weights + initial values
+# TODO anything other than complexity and mse for cost?
+# TODO plot the same plot in lorentz
+# TODO LASSO
 # NOTE with the current method, SINDy (like other complex networks methods) can't detect edge weights
+
+
+warnings.filterwarnings('ignore', module=backend_gtk3.__name__)
 
 
 # Directory Settings
@@ -24,7 +35,17 @@ DATA_FRAMES = 1000
 DELTA_T = 0.01
 SINDY_ITERATIONS = 10
 POWERS = [i * 0.5 for i in range(1, 5)] + [i * -0.5 for i in range(1, 5)]  # NOTE: there shouldn't be any zero powers
-CANDIDATE_LAMBDAS = [2 ** i for i in range(-12, 4, 1)]
+LAMBDA_RANGE = [-2000, 2]
+LAMBDA_STEP = 1.1
+
+
+# Calculated Settings
+CANDIDATE_LAMBDAS = [
+    LAMBDA_STEP ** i for i in range(
+        -1 * int(math.log(abs(LAMBDA_RANGE[0])) / math.log(LAMBDA_STEP)),
+        1 * int(math.log(abs(LAMBDA_RANGE[1])) / math.log(LAMBDA_STEP))
+    )
+]
 
 
 def _get_adjacency_matrix():
@@ -39,7 +60,7 @@ def _get_adjacency_matrix():
 
 def _get_x(a, time_frames):
     x = np.zeros((time_frames + 1, NUMBER_OF_NODES))
-    x[0] = np.array([100 * i for i in range(1, NUMBER_OF_NODES + 1)])  # NOTE: values must be large enough and different
+    x[0] = np.array([random.random() * i * 1000 for i in range(1, NUMBER_OF_NODES + 1)])  # NOTE: values must be large enough and different
     for i in range(1, time_frames + 1):
         for j in range(NUMBER_OF_NODES):
             f_result = -1 * (x[i - 1, j] ** 1.5)
@@ -130,8 +151,21 @@ def run():
                     least_cost = cost
                     best_xi = xi
 
+
         plt.clf()
-        plt.scatter(complexity_list, mse_list)
+        plt.figure(figsize=(16, 9), dpi=96)
+        plt.plot(complexity_list, mse_list)
+        counter = {}
+        for i in range(len(complexity_list)):
+            complexity = complexity_list[i]
+            mse_cv = mse_list[i]
+            key = '%f_%f' % (complexity, mse_cv)
+            if key in counter:
+                counter[key][2] += 1
+            else:
+                counter[key] = [complexity, mse_cv, 1]
+        for value in counter.values():
+            plt.annotate(value[2], (value[0], value[1]))
         plt.xlabel('complexity (percentage of nonzero entries)')
         plt.ylabel('log10 of cross validation mean squared error')
         plt.savefig(os.path.join(OUTPUT_DIR, 'node_%d_mse_complexity.png' % node_index))
