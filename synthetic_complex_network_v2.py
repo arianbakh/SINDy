@@ -12,9 +12,8 @@ from pylatex.utils import NoEscape
 
 
 # TODO one regression to rule them all -> concat
-# TODO print lambdas
-# TODO gradually decrease lambdas
-# TODO test random weights + initial values
+# TODO adaptive lambda
+# TODO test random weights
 # TODO anything other than complexity and mse for cost?
 # TODO plot the same plot in lorentz
 # TODO LASSO
@@ -60,7 +59,9 @@ def _get_adjacency_matrix():
 
 def _get_x(a, time_frames):
     x = np.zeros((time_frames + 1, NUMBER_OF_NODES))
-    x[0] = np.array([random.random() * i * 1000 for i in range(1, NUMBER_OF_NODES + 1)])  # NOTE: values must be large enough and different
+    x[0] = np.array(
+        [random.random() * i * 1000 for i in range(1, NUMBER_OF_NODES + 1)]
+    )  # NOTE: values must be large enough and different
     for i in range(1, time_frames + 1):
         for j in range(NUMBER_OF_NODES):
             f_result = -1 * (x[i - 1, j] ** 1.5)
@@ -138,6 +139,9 @@ def run():
         complexity_list = []
         least_cost = sys.maxsize
         best_xi = None
+        selected_lambda = 0
+        selected_complexity = 0
+        selected_mse = 0
         for candidate_lambda in CANDIDATE_LAMBDAS:
             xi = _sindy(x_dot, theta, candidate_lambda, node_index)
             complexity = np.count_nonzero(xi) / np.prod(xi.shape)
@@ -150,7 +154,9 @@ def run():
                 if cost < least_cost:
                     least_cost = cost
                     best_xi = xi
-
+                    selected_lambda = candidate_lambda
+                    selected_complexity = complexity
+                    selected_mse = mse_cv
 
         plt.clf()
         plt.figure(figsize=(16, 9), dpi=96)
@@ -166,6 +172,11 @@ def run():
                 counter[key] = [complexity, mse_cv, 1]
         for value in counter.values():
             plt.annotate(value[2], (value[0], value[1]))
+        plt.title('lambda = %f, complexity = %f, log10(mse) = %f' % (
+            selected_lambda,
+            selected_complexity,
+            math.log10(selected_mse)
+        ))
         plt.xlabel('complexity (percentage of nonzero entries)')
         plt.ylabel('log10 of cross validation mean squared error')
         plt.savefig(os.path.join(OUTPUT_DIR, 'node_%d_mse_complexity.png' % node_index))
