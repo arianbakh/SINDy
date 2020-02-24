@@ -12,10 +12,8 @@ from pylatex.utils import NoEscape
 
 
 # TODO adaptive lambda
-# TODO test random weights
-# TODO anything other than complexity and mse for cost?
 # TODO plot the same plot in lorentz
-# TODO LASSO
+# TODO anything other than complexity and mse for cost?
 # NOTE with the current method, SINDy (like other complex networks methods) can't detect edge weights
 
 
@@ -51,8 +49,7 @@ def _get_adjacency_matrix():
     for i in range(NUMBER_OF_NODES):
         for j in range(NUMBER_OF_NODES):
             if i != j:
-                a[i, j] = 1.33
-                # a[i, j] = random.random()
+                a[i, j] = random.random()
     return a
 
 
