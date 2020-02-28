@@ -74,35 +74,29 @@ def _get_x_dot(x):
 
 def _get_theta(x, adjacency_matrix, node_index):
     time_frames = x.shape[0] - 1
-    theta = []
     latex_functions = []
-    for j in range(time_frames):
-        entry = [1]
-        latex_functions.append(r'1')
-        for first_power in POWERS:
-            entry.append(x[j, node_index] ** first_power)
-            if j == 0:
-                latex_functions.append(r'x_{%d}^{%f}' % (node_index, first_power))
-            for second_power in POWERS:
-                entry.append(
-                    sum([
-                        adjacency_matrix[k, node_index] * (x[j, node_index] ** first_power) * (x[j, k] ** second_power)
-                        for k in range(NUMBER_OF_NODES) if k != node_index
-                    ])
-                )
-                if j == 0:
-                    latex_functions.append(
-                        r'(' +
-                        '+'.join([
-                            r'%f * x_{%d}^{%f} * x_{%d}^{%f}' % (
-                                adjacency_matrix[k, node_index], node_index, first_power, k, second_power
-                            )
-                            for k in range(NUMBER_OF_NODES) if k != node_index
-                        ]) +
-                        r')'
+    column_list = [np.ones(time_frames)]
+    latex_functions.append(r'1')
+    x_i = x[:time_frames, node_index]
+    for first_power in POWERS:
+        column_list.append(x_i ** first_power)
+        latex_functions.append(r'x_{%d}^{%f}' % (node_index, first_power))
+        for second_power in POWERS:
+            terms = []
+            for j in range(NUMBER_OF_NODES):
+                if j != node_index and adjacency_matrix[j, node_index]:
+                    x_j = x[:time_frames, j]
+                    terms.append(adjacency_matrix[j, node_index] * x_i ** first_power * x_j ** second_power)
+            if terms:
+                column = np.sum(terms, axis=0)
+                column_list.append(column)
+                latex_functions.append(
+                    r'(\sum_j A_{j,%d} * x_{%d}^{%f} * x_j^{%f})' % (
+                        node_index, node_index, first_power, second_power
                     )
-        theta.append(entry)
-    return np.array(theta), latex_functions
+                )
+    theta = np.column_stack(column_list)
+    return theta, latex_functions
 
 
 def _sindy(x_dot, theta, candidate_lambda):
@@ -142,8 +136,8 @@ def run():
         selected_lambda = 0
         selected_complexity = 0
         selected_mse = 0
+        ith_derivative = x_dot[:, node_index]
         for candidate_lambda in CANDIDATE_LAMBDAS:
-            ith_derivative = x_dot[:, node_index]
             xi = _sindy(ith_derivative, theta, candidate_lambda)
             complexity = np.count_nonzero(xi) / np.prod(xi.shape)
             mse_cv = np.square(x_dot_cv[:, node_index] - (np.matmul(theta_cv, xi.T))).mean()
@@ -159,7 +153,6 @@ def run():
                     selected_complexity = complexity
                     selected_mse = mse_cv
 
-        plt.clf()
         plt.figure(figsize=(16, 9), dpi=96)
         plt.plot(complexity_list, mse_list)
         counter = {}
@@ -181,6 +174,7 @@ def run():
         plt.xlabel('complexity (percentage of nonzero entries)')
         plt.ylabel('log10 of cross validation mean squared error')
         plt.savefig(os.path.join(OUTPUT_DIR, 'node_%d_lambda.png' % node_index))
+        plt.close('all')
 
         latex_document.append(NoEscape(r'\clearpage $'))
         line = r'\frac{dx_{%d}}{dt}=' % node_index
@@ -222,7 +216,6 @@ def run():
                 selected_complexity = complexity
                 selected_mse = mse_cv
 
-    plt.clf()
     plt.figure(figsize=(16, 9), dpi=96)
     plt.plot(complexity_list, mse_list)
     counter = {}
@@ -244,6 +237,7 @@ def run():
     plt.xlabel('complexity (percentage of nonzero entries)')
     plt.ylabel('log10 of cross validation mean squared error')
     plt.savefig(os.path.join(OUTPUT_DIR, 'entire_system_lambda.png'))
+    plt.close('all')
 
     latex_document = Document('basic')
     latex_document.packages.append(Package('breqn'))

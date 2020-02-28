@@ -18,7 +18,7 @@ from pylatex.utils import NoEscape
 warnings.filterwarnings('ignore', module=backend_gtk3.__name__)
 
 
-# Input and Output Settings
+# File and Directory Settings
 BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, 'output')
 DATA_DIR = os.path.join(BASE_DIR, 'data')
@@ -26,16 +26,15 @@ UCI_ONLINE_URL = 'http://konect.uni-koblenz.de/downloads/tsv/opsahl-ucsocial.tar
 UCI_ONLINE_TAR_PATH = os.path.join(DATA_DIR, 'opsahl-ucsocial.tar.bz2')
 UCI_ONLINE_DIR = os.path.join(DATA_DIR, 'opsahl-ucsocial')
 UCI_ONLINE_TSV_PATH = os.path.join(UCI_ONLINE_DIR, 'out.opsahl-ucsocial')
-TEMPORAL_BUCKET_SIZE = 3 * 60 * 60  # in seconds
-ADJACENCY_MATRIX_PATH = os.path.join(DATA_DIR, 'adjacency_matrix.npy')
-X_PATH = os.path.join(DATA_DIR, 'x.npy')
 
 
 # Algorithm Settings
+TEMPORAL_BUCKET_SIZE = 24 * 60 * 60  # in seconds
+NODE_LIMIT = 150  # had most nonzero ratio experimentally
 EPSILON = 10 ** -24
 CROSS_VALIDATION_PERCENTAGE = 0.3  # range: [0, 1]
 SINDY_ITERATIONS = 10
-POWERS = [i * 0.5 for i in range(1, 5)]  # NOTE: there shouldn't be any zero powers
+POWERS = [i * 0.1 for i in range(1, 21)]  # NOTE: there shouldn't be any zero powers
 LAMBDA_RANGE = [-2000, 2]
 LAMBDA_STEP = 1.1
 
@@ -75,7 +74,13 @@ def _get_data_matrices():
     last_timestamp = 0
     min_id = sys.maxsize
     max_id = 0
+    edge_count = {}
     for from_id, to_id, count, timestamp in _data_generator():
+        key = '%d_%d' % (min(from_id, to_id), max(from_id, to_id))
+        if key not in edge_count:
+            edge_count[key] = 0
+        edge_count[key] += 1
+
         if not first_timestamp:
             first_timestamp = timestamp
         last_timestamp = timestamp
@@ -90,12 +95,25 @@ def _get_data_matrices():
     number_of_users = max_id - min_id + 1
     number_of_buckets = int((last_timestamp - first_timestamp) / TEMPORAL_BUCKET_SIZE) + 1
 
-    adjacency_matrix = np.zeros((number_of_users, number_of_users))
-    x = np.zeros((number_of_buckets, number_of_users))
+    selected_nodes = set()
+    for edge, count in sorted(edge_count.items(), key=lambda item: -item[1]):
+        if len(selected_nodes) < min(NODE_LIMIT, number_of_users):
+            involved_nodes = {int(item) for item in edge.split('_')}
+            selected_nodes = selected_nodes.union(involved_nodes)
+        else:
+            break
+    new_index = {}
+    for i, selected_node in enumerate(selected_nodes):
+        new_index[selected_node] = i
+    number_of_nodes = len(selected_nodes)
+
+    adjacency_matrix = np.zeros((number_of_nodes, number_of_nodes))
+    x = np.zeros((number_of_buckets, number_of_nodes))
     for from_id, to_id, count, timestamp in _data_generator():
-        adjacency_matrix[from_id - min_id, to_id - min_id] = 1
-        bucket = int((timestamp - first_timestamp) / TEMPORAL_BUCKET_SIZE)
-        x[bucket, from_id - min_id] += count
+        if from_id in selected_nodes and to_id in selected_nodes:
+            adjacency_matrix[new_index[from_id], new_index[to_id]] = 1
+            bucket = int((timestamp - first_timestamp) / TEMPORAL_BUCKET_SIZE)
+            x[bucket, new_index[from_id]] += count
 
     cross_validation_index = int((1 - CROSS_VALIDATION_PERCENTAGE) * number_of_buckets)
 
@@ -110,35 +128,31 @@ def _get_x_dot(x):
 def _get_theta(x, adjacency_matrix, node_index):
     number_of_nodes = x.shape[1]
     time_frames = x.shape[0] - 1
-    theta = []
     latex_functions = []
-    for j in range(time_frames):
-        entry = [1]
-        latex_functions.append(r'1')
-        for first_power in POWERS:
-            entry.append(x[j, node_index] ** first_power)
-            if j == 0:
-                latex_functions.append(r'x_{%d}^{%f}' % (node_index, first_power))
-            for second_power in POWERS:
-                entry.append(
-                    sum([
-                        adjacency_matrix[k, node_index] * (x[j, node_index] ** first_power) * (x[j, k] ** second_power)
-                        for k in range(number_of_nodes) if k != node_index
-                    ])
+    column_list = [np.ones(time_frames)]
+    latex_functions.append(r'1')
+    x_i = x[:time_frames, node_index]
+    for first_power in POWERS:
+        column_list.append(x_i ** first_power)
+        latex_functions.append(r'x_{%d}^{%f}' % (node_index, first_power))
+        for second_power in POWERS:
+            terms = []
+            for j in range(number_of_nodes):
+                if j != node_index:
+                    if adjacency_matrix[j, node_index]:
+                        x_j = x[:time_frames, j]
+                        terms.append(adjacency_matrix[j, node_index] * x_i ** first_power * x_j ** second_power)
+                    else:
+                        terms.append(np.zeros(time_frames))
+            column = np.sum(terms, axis=0)
+            column_list.append(column)
+            latex_functions.append(
+                r'(\sum_j A_{j,%d} * x_{%d}^{%f} * x_j^{%f})' % (
+                    node_index, node_index, first_power, second_power
                 )
-                if j == 0:
-                    latex_functions.append(
-                        r'(' +
-                        '+'.join([
-                            r'%f * x_{%d}^{%f} * x_{%d}^{%f}' % (
-                                adjacency_matrix[k, node_index], node_index, first_power, k, second_power
-                            )
-                            for k in range(number_of_nodes) if k != node_index
-                        ]) +
-                        r')'
-                    )
-        theta.append(entry)
-    return np.array(theta), latex_functions
+            )
+    theta = np.column_stack(column_list)
+    return theta, latex_functions
 
 
 def _sindy(x_dot, theta, candidate_lambda):
@@ -167,10 +181,10 @@ def run():
         print('### SINDy for node %d' % node_index)  # TODO remove
         theta, latex_functions = _get_theta(x, adjacency_matrix, node_index)
         theta_list.append(theta)
-        if node_index == 0:
-            first_node_latex_functions = latex_functions
         theta_cv, latex_functions = _get_theta(x_cv, adjacency_matrix, node_index)
         theta_cv_list.append(theta_cv)
+        if node_index == 0:
+            first_node_latex_functions = latex_functions
         mse_list = []
         complexity_list = []
         least_cost = sys.maxsize
@@ -178,8 +192,8 @@ def run():
         selected_lambda = 0
         selected_complexity = 0
         selected_mse = 0
+        ith_derivative = x_dot[:, node_index]
         for candidate_lambda in CANDIDATE_LAMBDAS:
-            ith_derivative = x_dot[:, node_index]
             xi = _sindy(ith_derivative, theta, candidate_lambda)
             complexity = np.count_nonzero(xi) / np.prod(xi.shape)
             mse_cv = np.square(x_dot_cv[:, node_index] - (np.matmul(theta_cv, xi.T))).mean()
@@ -195,7 +209,6 @@ def run():
                     selected_complexity = complexity
                     selected_mse = mse_cv
 
-        plt.clf()
         plt.figure(figsize=(16, 9), dpi=96)
         plt.plot(complexity_list, mse_list)
         counter = {}
@@ -217,15 +230,19 @@ def run():
         plt.xlabel('complexity (percentage of nonzero entries)')
         plt.ylabel('log10 of cross validation mean squared error')
         plt.savefig(os.path.join(OUTPUT_DIR, 'node_%d_lambda.png' % node_index))
+        plt.close('all')
 
         latex_document.append(NoEscape(r'\clearpage $'))
         line = r'\frac{dx_{%d}}{dt}=' % node_index
-        line_content = []
-        for j in range(best_xi.shape[0]):
-            if best_xi[j]:
-                line_content.append(r'%f' % best_xi[j] + latex_functions[j])
+        if best_xi is not None:
+            line_content = []
+            for j in range(best_xi.shape[0]):
+                if best_xi[j]:
+                    line_content.append(r'%f' % best_xi[j] + latex_functions[j])
 
-        line += ' + '.join(line_content)
+            line += ' + '.join(line_content)
+        else:
+            line += '0'
         latex_document.append(NoEscape(line))
         latex_document.append(NoEscape(r'$'))
     latex_document.generate_pdf(os.path.join(OUTPUT_DIR, 'individual_equations.pdf'))
@@ -258,7 +275,6 @@ def run():
                 selected_complexity = complexity
                 selected_mse = mse_cv
 
-    plt.clf()
     plt.figure(figsize=(16, 9), dpi=96)
     plt.plot(complexity_list, mse_list)
     counter = {}
@@ -280,6 +296,7 @@ def run():
     plt.xlabel('complexity (percentage of nonzero entries)')
     plt.ylabel('log10 of cross validation mean squared error')
     plt.savefig(os.path.join(OUTPUT_DIR, 'entire_system_lambda.png'))
+    plt.close('all')
 
     latex_document = Document('basic')
     latex_document.packages.append(Package('breqn'))

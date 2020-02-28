@@ -18,3 +18,5 @@ datetime
 - _get_theta takes too long, parallelize with numpy operations
 
 - idea: to speed up, select most active node, its neighbors and neighbors of neighbors
+
+- save progress so you can resume
