@@ -11,7 +11,7 @@
 - use a class for data (incl. x, x_dot, adjacency_matrix)
 
 - save each SINDy run output in a different directory named after job type (lorentz, ...) and 
-datetime
+datetime + save library for each run
 
 - shared settings
 
