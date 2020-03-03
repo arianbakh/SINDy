@@ -27,7 +27,15 @@ NUMBER_OF_NODES = 10
 DATA_FRAMES = 1000
 DELTA_T = 0.01
 SINDY_ITERATIONS = 10
-POWERS = [i * 0.5 for i in range(1, 5)] + [i * -0.5 for i in range(1, 5)]  # NOTE: there shouldn't be any zero powers
+POWERS = {  # use constants instead of zero powers
+    'f_constant': True,
+    'f': [0.5, 1, 1.5, 2],
+    'g_constant': True,  # this could be redundant if f_constant is true
+    'g_solo_i': [],  # this could be redundant if f overlaps
+    'g_solo_j': [0.5, 1, 1.5, 2],
+    'g_combined_i': [0.5, 1, 1.5, 2],
+    'g_combined_j': [0.5, 1, 1.5, 2],
+}
 LAMBDA_RANGE = [-2000, 2]
 LAMBDA_STEP = 1.1
 
@@ -74,27 +82,56 @@ def _get_x_dot(x):
 
 def _get_theta(x, adjacency_matrix, node_index):
     time_frames = x.shape[0] - 1
-    latex_functions = []
-    column_list = [np.ones(time_frames)]
-    latex_functions.append(r'1')
     x_i = x[:time_frames, node_index]
-    for first_power in POWERS:
-        column_list.append(x_i ** first_power)
-        latex_functions.append(r'x_{%d}^{%f}' % (node_index, first_power))
-        for second_power in POWERS:
+    adjacency_sum = np.sum(adjacency_matrix[:, node_index])
+    column_list = []
+    latex_functions = []
+
+    if POWERS['f_constant']:
+        column_list.append(np.ones(time_frames))
+        latex_functions.append(r'1')
+
+    for f_power in POWERS['f']:
+        column_list.append(x_i ** f_power)
+        latex_functions.append(r'x_{%d}^{%f}' % (node_index, f_power))
+
+    if POWERS['g_constant']:
+        column_list.append(np.full(time_frames, adjacency_sum))
+        latex_functions.append(r'(\sum_j A_{j,%d})' % node_index)
+
+    for g_solo_i_power in POWERS['g_solo_i']:
+        column_list.append(adjacency_sum * x_i ** g_solo_i_power)
+        latex_functions.append(r'(\sum_j A_{j,%d} * x_{%d}^{%f})' % (node_index, node_index, g_solo_i_power))
+
+    for g_solo_j_power in POWERS['g_solo_j']:
+        terms = []
+        for j in range(NUMBER_OF_NODES):
+            if j != node_index and adjacency_matrix[j, node_index]:
+                x_j = x[:time_frames, j]
+                terms.append(adjacency_matrix[j, node_index] * x_j ** g_solo_j_power)
+        if terms:
+            column = np.sum(terms, axis=0)
+            column_list.append(column)
+            latex_functions.append(
+                r'(\sum_j A_{j,%d} * x_j^{%f})' % (node_index, g_solo_j_power)
+            )
+
+    for g_combined_i_power in POWERS['g_combined_i']:
+        for g_combined_j_power in POWERS['g_combined_j']:
             terms = []
             for j in range(NUMBER_OF_NODES):
                 if j != node_index and adjacency_matrix[j, node_index]:
                     x_j = x[:time_frames, j]
-                    terms.append(adjacency_matrix[j, node_index] * x_i ** first_power * x_j ** second_power)
+                    terms.append(adjacency_matrix[j, node_index] * x_i ** g_combined_i_power * x_j ** g_combined_j_power)
             if terms:
                 column = np.sum(terms, axis=0)
                 column_list.append(column)
                 latex_functions.append(
                     r'(\sum_j A_{j,%d} * x_{%d}^{%f} * x_j^{%f})' % (
-                        node_index, node_index, first_power, second_power
+                        node_index, node_index, g_combined_i_power, g_combined_j_power
                     )
                 )
+
     theta = np.column_stack(column_list)
     return theta, latex_functions
 
