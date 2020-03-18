@@ -26,3 +26,11 @@ datetime + save library for each run
 - fitness: AIC too complicated, use complexity * MSE
 - what about delete statement? seems unnecessary
 - don't need to use all nodes all the time
+
+# experiments
+
+- experiment 4: dynamic number of statements, coefficients
+- remove chromosome size
+- add complexity to fitness
+- experiment 5: two variables
+- data-driven discovery of complex dynamical networks using intermittent genetic and SINDy

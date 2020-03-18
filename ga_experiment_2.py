@@ -12,12 +12,7 @@ CHILDREN = 10
 ITERATIONS = 100000
 POWER_RANGE = (0, 4)
 COEFFICIENT_RANGE = (1, 5)
-EPSILON = 10 ** -8
-# TODO experiment 3: dynamic number of statements, coefficients
-# TODO remove chromosome size
-# TODO add complexity to fitness
-# TODO experiment 4: two variables
-# TODO data-driven discovery of complex dynamical networks using intermittent genetic and SINDy
+EPSILON = 10 ** -24
 
 
 def _gauss_decay(value, origin, offset, scale, decay):
@@ -90,8 +85,9 @@ class Individual:
 
     def _calculate_fitness(self, x, y):
         mse = self._calculate_mse(x, y)
-        decay = self._calculate_decay()
-        return decay / mse
+        decay = self._calculate_decay()  # must be called after coefficients are calculated in mse
+        least_difference = self._calculate_least_difference()
+        return decay * least_difference / mse
 
 
 class Population:
