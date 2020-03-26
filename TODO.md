@@ -34,3 +34,9 @@ datetime + save library for each run
 - add complexity to fitness
 - experiment 5: two variables
 - data-driven discovery of complex dynamical networks using intermittent genetic and SINDy
+- check the mse of the formula in the paper: https://www.nature.com/articles/ncomms8186
+- problem: if a neighbor is zero (and we assume very small epsilon) then the negative power term will be huge
+- challenge: gotta find best y0 first
+- test synthetic hill function
+- finish with proper SINDy to omit unnecessary terms
+- https://thebiogrid.org/

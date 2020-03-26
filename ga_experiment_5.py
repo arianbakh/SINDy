@@ -1,25 +1,41 @@
 import numpy as np
+import os
 import random
+import sys
+import tarfile
+import urllib.request
 
 
-# experiment 4: static number of statements, coefficients, discrete genes, complex dynamical network
-# sample results:
-# -0.005886 + -0.998262 * xi^1.499023 + 1.007844 * sum Aij * xi^0.467529 * xj^0.521240
-# -0.001100 + -0.999386 * xi^1.500244 + 0.997469 * sum Aij * xi^0.500488 * xj^0.501709
+# experiment 5: static number of statements, coefficients, discrete genes, human dynamics (USocial data)
 
 
-NUMBER_OF_NODES = 5
-DELTA_T = 0.01
-TIME_FRAMES = 100
-CHROMOSOME_SIZE = 3
+# File and Directory Settings
+BASE_DIR = os.path.dirname(os.path.realpath(__file__))
+OUTPUT_DIR = os.path.join(BASE_DIR, 'output')
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+UCI_ONLINE_URL = 'http://konect.uni-koblenz.de/downloads/tsv/opsahl-ucsocial.tar.bz2'
+UCI_ONLINE_TAR_PATH = os.path.join(DATA_DIR, 'opsahl-ucsocial.tar.bz2')
+UCI_ONLINE_DIR = os.path.join(DATA_DIR, 'opsahl-ucsocial')
+UCI_ONLINE_TSV_PATH = os.path.join(UCI_ONLINE_DIR, 'out.opsahl-ucsocial')
+
+
+# Input Data Settings
+TEMPORAL_BUCKET_SIZE = 24 * 60 * 60  # in seconds  # originally 3 hours
+NODE_LIMIT = 10  # 150 had most nonzero ratio experimentally
+CROSS_VALIDATION_PERCENTAGE = 0.3  # range: [0, 1]
+
+
+# Genetic Settings
+CHROMOSOME_SIZE = 4
 GENE_SIZE = 12  # bits
 MUTATION_CHANCE = 0.1
 POPULATION = 100
 CHILDREN = 10
-ITERATIONS = 10000
-POWER_RANGE = (0, 5)
+ITERATIONS = 20000
+POWER_RANGE = (0.1, 5)
 
 
+# Calculated Settings
 STEP = (POWER_RANGE[1] - POWER_RANGE[0]) / 2 ** GENE_SIZE
 
 
@@ -30,19 +46,24 @@ class Individual:
         self.fitness = self._calculate_fitness(x, y, adjacency_matrix)
 
     def _get_theta(self, x, adjacency_matrix):
+        number_of_nodes = x.shape[1]
+        time_frames = x.shape[0] - 1
+
         theta_list = []
-        for node_index in range(NUMBER_OF_NODES):
-            x_i = x[:TIME_FRAMES, node_index]
+        for node_index in range(number_of_nodes):
+            x_i = x[:time_frames, node_index]
+            adjacency_sum = np.sum(adjacency_matrix[:, node_index])
             column_list = [
-                np.ones(TIME_FRAMES),
+                np.ones(time_frames),
                 x_i ** self.powers[0],
+                adjacency_sum * x_i ** self.powers[1],
             ]
             terms = []
-            for j in range(NUMBER_OF_NODES):
+            for j in range(number_of_nodes):
                 if j != node_index and adjacency_matrix[j, node_index]:
-                    x_j = x[:TIME_FRAMES, j]
+                    x_j = x[:time_frames, j]
                     terms.append(
-                        adjacency_matrix[j, node_index] * x_i ** self.powers[1] * x_j ** self.powers[2])
+                        adjacency_matrix[j, node_index] * x_i ** self.powers[2] * x_j ** self.powers[3])
             if terms:
                 column = np.sum(terms, axis=0)
                 column_list.append(column)
@@ -51,6 +72,8 @@ class Individual:
         return np.concatenate(theta_list)
 
     def _calculate_mse(self, x, y, adjacency_matrix):
+        number_of_nodes = x.shape[1]
+
         powers = []
         for i in range(CHROMOSOME_SIZE):
             binary = 0
@@ -60,7 +83,7 @@ class Individual:
             powers.append(power)
         self.powers = powers
         theta = self._get_theta(x, adjacency_matrix)
-        stacked_y = np.concatenate([y[:, node_index] for node_index in range(NUMBER_OF_NODES)])
+        stacked_y = np.concatenate([y[:, node_index] for node_index in range(number_of_nodes)])
         coefficients = np.linalg.lstsq(theta, stacked_y, rcond=None)[0]
         self.coefficients = coefficients
         y_hat = np.matmul(theta, coefficients.T)
@@ -141,40 +164,85 @@ class Population:
         return self.individuals[0]  # fittest
 
 
-def _get_adjacency_matrix():
-    a = np.zeros((NUMBER_OF_NODES, NUMBER_OF_NODES))
-    for i in range(NUMBER_OF_NODES):
-        for j in range(NUMBER_OF_NODES):
-            if i != j:
-                a[i, j] = random.random()
-    return a
+def _ensure_data():
+    if not os.path.exists(UCI_ONLINE_DIR):
+        urllib.request.urlretrieve(UCI_ONLINE_URL, UCI_ONLINE_TAR_PATH)
+        tar = tarfile.open(UCI_ONLINE_TAR_PATH, "r:bz2")
+        tar.extractall(DATA_DIR)
+        tar.close()
 
 
-def _get_x(adjacency_matrix, time_frames):
-    x = np.zeros((time_frames + 1, NUMBER_OF_NODES))
-    x[0] = np.array(
-        [1 + random.random() * 10 for _ in range(NUMBER_OF_NODES)]
-    )  # NOTE: values must be large enough and different
-    for i in range(1, time_frames + 1):
-        for j in range(NUMBER_OF_NODES):
-            f_result = -1 * (x[i - 1, j] ** 1.5)
-            g_result = 0
-            for k in range(NUMBER_OF_NODES):
-                if k != j:
-                    g_result += adjacency_matrix[k, j] * (x[i - 1, j] ** 0.5) * (x[i - 1, k] ** 0.5)
-            derivative = f_result + g_result
-            x[i, j] = x[i - 1, j] + DELTA_T * derivative
-    return x
+def _data_generator():
+    _ensure_data()
+    with open(UCI_ONLINE_TSV_PATH, 'r') as tsv_file:
+        for i, line in enumerate(tsv_file.readlines()):
+            if not line.startswith('%'):
+                split_line = line.strip().split()
+                from_id = int(split_line[0])
+                to_id = int(split_line[1])
+                count = int(split_line[2])
+                timestamp = int(split_line[3])
+                yield from_id, to_id, count, timestamp
+
+
+def _get_data_matrices():
+    first_timestamp = 0
+    last_timestamp = 0
+    min_id = sys.maxsize
+    max_id = 0
+    edge_count = {}
+    for from_id, to_id, count, timestamp in _data_generator():
+        key = '%d_%d' % (min(from_id, to_id), max(from_id, to_id))
+        if key not in edge_count:
+            edge_count[key] = 0
+        edge_count[key] += 1
+
+        if not first_timestamp:
+            first_timestamp = timestamp
+        last_timestamp = timestamp
+        if from_id > max_id:
+            max_id = from_id
+        if to_id > max_id:
+            max_id = to_id
+        if from_id < min_id:
+            min_id = from_id
+        if to_id < min_id:
+            min_id = to_id
+    number_of_users = max_id - min_id + 1
+    number_of_buckets = int((last_timestamp - first_timestamp) / TEMPORAL_BUCKET_SIZE) + 1
+
+    selected_nodes = set()
+    for edge, count in sorted(edge_count.items(), key=lambda item: -item[1]):
+        if len(selected_nodes) < min(NODE_LIMIT, number_of_users):
+            involved_nodes = {int(item) for item in edge.split('_')}
+            selected_nodes = selected_nodes.union(involved_nodes)
+        else:
+            break
+    new_index = {}
+    for i, selected_node in enumerate(selected_nodes):
+        new_index[selected_node] = i
+    number_of_nodes = len(selected_nodes)
+
+    adjacency_matrix = np.zeros((number_of_nodes, number_of_nodes))
+    x = np.zeros((number_of_buckets, number_of_nodes))
+    for from_id, to_id, count, timestamp in _data_generator():
+        if from_id in selected_nodes and to_id in selected_nodes:
+            adjacency_matrix[new_index[from_id], new_index[to_id]] = 1
+            bucket = int((timestamp - first_timestamp) / TEMPORAL_BUCKET_SIZE)
+            x[bucket, new_index[from_id]] += count
+
+    cross_validation_index = int((1 - CROSS_VALIDATION_PERCENTAGE) * number_of_buckets)
+
+    return adjacency_matrix, x[:cross_validation_index], x[cross_validation_index:]
 
 
 def _get_y(x):
-    x_dot = (x[1:] - x[:len(x) - 1]) / DELTA_T
+    x_dot = (x[1:] - x[:len(x) - 1])
     return x_dot
 
 
 def run():
-    adjacency_matrix = _get_adjacency_matrix()
-    x = _get_x(adjacency_matrix, TIME_FRAMES)
+    adjacency_matrix, x, x_cv = _get_data_matrices()
     y = _get_y(x)
     population = Population(POPULATION, x, y, adjacency_matrix)
     fittest_individual = None
@@ -182,13 +250,15 @@ def run():
         fittest_individual = population.run_single_iteration()
         if i % 1000 == 0:
             print(1 / fittest_individual.fitness)
-    print('%f + %f * xi^%f + %f * sum Aij * xi^%f * xj^%f' % (
+    print('%f + %f * xi^%f + %f * sum Aij xi^%f + %f * sum Aij * xi^%f * xj^%f' % (
         fittest_individual.coefficients[0],
         fittest_individual.coefficients[1],
         fittest_individual.powers[0],
         fittest_individual.coefficients[2],
         fittest_individual.powers[1],
-        fittest_individual.powers[2]
+        fittest_individual.coefficients[3],
+        fittest_individual.powers[2],
+        fittest_individual.powers[3]
     ))
 
 
