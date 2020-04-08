@@ -21,7 +21,7 @@ UCI_ONLINE_TSV_PATH = os.path.join(UCI_ONLINE_DIR, 'out.opsahl-ucsocial')
 
 # Input Data Settings
 TEMPORAL_BUCKET_SIZE = 24 * 60 * 60  # in seconds  # originally 3 hours
-NODE_LIMIT = 10  # 150 had most nonzero ratio experimentally
+NODE_LIMIT = 100  # 150 had most nonzero ratio experimentally
 CROSS_VALIDATION_PERCENTAGE = 0.3  # range: [0, 1]
 
 
@@ -31,8 +31,8 @@ GENE_SIZE = 12  # bits
 MUTATION_CHANCE = 0.1
 POPULATION = 100
 CHILDREN = 10
-ITERATIONS = 20000
-POWER_RANGE = (0.1, 5)
+ITERATIONS = 100
+POWER_RANGE = (-1, 4)
 
 
 # Calculated Settings
@@ -185,6 +185,10 @@ def _data_generator():
                 yield from_id, to_id, count, timestamp
 
 
+def _normalize_x(x):
+    return x + 1  # TODO
+
+
 def _get_data_matrices():
     first_timestamp = 0
     last_timestamp = 0
@@ -233,6 +237,8 @@ def _get_data_matrices():
 
     cross_validation_index = int((1 - CROSS_VALIDATION_PERCENTAGE) * number_of_buckets)
 
+    x = _normalize_x(x)
+
     return adjacency_matrix, x[:cross_validation_index], x[cross_validation_index:]
 
 
@@ -248,8 +254,7 @@ def run():
     fittest_individual = None
     for i in range(ITERATIONS):
         fittest_individual = population.run_single_iteration()
-        if i % 1000 == 0:
-            print(1 / fittest_individual.fitness)
+        print(1 / fittest_individual.fitness)
     print('%f + %f * xi^%f + %f * sum Aij xi^%f + %f * sum Aij * xi^%f * xj^%f' % (
         fittest_individual.coefficients[0],
         fittest_individual.coefficients[1],
